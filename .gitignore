@@ -1,0 +1,23 @@
+# The Goland local configuration
+.idea/
+# Build directory and build files
+build/*
+*.log
+*.txt
+pkg/*
+# Local setup for bash
+.bashrc
+# Files from profiling
+*.prof
+*.pdf
+cover.out
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+# Some private files
+.private/
+private/
+notes/
+notes.txt

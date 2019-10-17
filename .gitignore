@@ -2,6 +2,7 @@
 .idea/
 # Build directory and build files
 build/*
+bin/*
 *.log
 *.txt
 pkg/*

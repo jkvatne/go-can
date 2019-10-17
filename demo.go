@@ -1,22 +1,31 @@
 package main
 
 import (
-	"can"
 	"fmt"
-	"peak"
+	"go-can/can"
+	"go-can/peak"
 	"time"
 )
 
 func handler(m *can.Msg) {
-	fmt.Printf("ID %x, Data %d,%d,%d,%d,%d,%d,%d,%d\n", m.Id, m.Data[0], m.Data[1], m.Data[2], m.Data[3],
-		m.Data[4], m.Data[5], m.Data[6], m.Data[7])
+	fmt.Println(m.ToString())
 }
 
 func main() {
 	fmt.Printf("Start\n")
 	canbus,_ := peak.New(peak.PCAN_USBBUS1, peak.PCAN_BAUD_125K, handler)
 	msg := can.Msg{Id:1547, Type:peak.PCAN_MESSAGE_STANDARD, Len:8, Data:[8]uint8{64,3,16,0,0,0,0,0} }
-	_ = canbus.Write(msg)
+	canbus.Write(msg)
 	time.Sleep(100*time.Millisecond)
+	m:=canbus.Poll(msg, 0x58B)
+	if m!=nil {
+		fmt.Printf("Poll response is : %s\n", m.ToString())
+	}
+	for i := 0; i<100; i++ {
+		m := canbus.Poll(msg, 0x58B)
+		fmt.Printf("Poll response is : %s\n", m.ToString())
+		time.Sleep(time.Second/2)
+	}
 	canbus.Uninitialize()
+	fmt.Printf("Done\n")
 }

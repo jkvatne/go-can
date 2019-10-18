@@ -8,24 +8,31 @@ import (
 )
 
 func handler(m *can.Msg) {
-	fmt.Println(m.ToString())
+	fmt.Printf("Callback with message: %s\n",m.ToString())
 }
 
 func main() {
-	fmt.Printf("Start\n")
-	canbus,_ := peak.New(peak.PCAN_USBBUS1, peak.PCAN_BAUD_125K, handler)
-	msg := can.Msg{Id:1547, Type:peak.PCAN_MESSAGE_STANDARD, Len:8, Data:[8]uint8{64,3,16,0,0,0,0,0} }
-	canbus.Write(msg)
+	fmt.Printf("Setting up adapter and connection\n")
+	connection := can.NewConnection(
+		peak.New(peak.PCAN_USBBUS1, 125000),
+		100*time.Millisecond,
+		handler)
+
+	fmt.Println("Sending a message (sdo read)")
+	msg := can.Msg{Id:1547, Type:can.MESSAGE_STANDARD, Len:8, Data:[8]uint8{64,3,16,0,0,0,0,0} }
+	connection.Dev.Write(msg)
 	time.Sleep(100*time.Millisecond)
-	m:=canbus.Poll(msg, 0x58B)
-	if m!=nil {
+
+	fmt.Println("Polling on connection")
+	m:=connection.Poll(msg, 0x58B)
+	if m==nil {
+		fmt.Printf("No response from peak canbus poll ")
+	} else {
 		fmt.Printf("Poll response is : %s\n", m.ToString())
 	}
-	for i := 0; i<100; i++ {
-		m := canbus.Poll(msg, 0x58B)
-		fmt.Printf("Poll response is : %s\n", m.ToString())
-		time.Sleep(time.Second/2)
-	}
-	canbus.Uninitialize()
+	fmt.Println("Testing SdoRead()")
+	devId, _ := connection.SdoRead(11, 0x1000, 0, 4)
+	fmt.Printf("SdoRead from index 0x1000 from node 11, result is %d\n", devId)
+	connection.Close()
 	fmt.Printf("Done\n")
 }

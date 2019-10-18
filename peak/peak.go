@@ -9,7 +9,6 @@ import (
 
 type peakChannel struct {
 	channel uint8
-	btr     uint16
 	status  can.Status
 }
 
@@ -85,7 +84,7 @@ type canTimeStamp struct {
 
 
 func convertError(e uintptr) can.Status {
-	if e & 0xDF == 0 {
+	if e & 0xFFFFFFDF == 0 {
 		return can.Ok
 	} else if (e & pPCAN_ERROR_BUSOFF)!=0 {
 		return can.BusOff
@@ -113,7 +112,7 @@ func (p *peakChannel) Reset() {
 	_, _, _ = syscall.Syscall6(uintptr(CAN_Reset), 1, uintptr(p.channel),0,0,0,0,0)
 }
 
-func (p *peakChannel) Uninitialize() {
+func (p *peakChannel) Close() {
 	if p!=nil {
 		_, _, _ = syscall.Syscall6(uintptr(CAN_Uninitialize), 1, uintptr(p.channel), 0, 0, 0, 0, 0)
 	}
@@ -151,7 +150,10 @@ func (p *peakChannel) Read() *can.Msg {
 		fmt.Printf("Got message with status data, status=%s\n",p.StatusString())
 		return nil
 	}
-	if ret==0x20 {
+	if ret==pPCAN_ERROR_QRCVEMPTY {
+		return nil
+	}
+	if ret> pPCAN_ERROR_QXMTFULL {
 		return nil
 	}
 	return &msg
@@ -186,7 +188,7 @@ func New(channel uint8, bitrate int) *peakChannel {
 		Btr0Btr1 = pPCAN_BAUD_10K
 	}
 
-	bus := &peakChannel{channel: channel, btr: Btr0Btr1}
+	bus := &peakChannel{channel: channel}
 	err := bus.Initialize(Btr0Btr1)
 	if err!=nil {
 		return nil

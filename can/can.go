@@ -7,6 +7,8 @@ import (
 )
 
 type Id uint32
+type Index uint16
+type Subindex uint8
 type MsgType uint8
 type Status uint32
 type Callback func(msg *Msg)
@@ -23,7 +25,7 @@ type Device interface {
 	Read() *Msg
 	Write(Msg)
 	Status() Status
-	Uninitialize()
+	Close()
 	Reset()
 }
 
@@ -42,7 +44,7 @@ const (
 	Error
 )
 
-type connection struct {
+type Connection struct {
 	Dev           Device
 	mutex         sync.Mutex
 	timeout       time.Duration
@@ -67,7 +69,7 @@ func (m *Msg) ToString() string {
 		m.Data[4], m.Data[5], m.Data[6], m.Data[7])
 }
 
-func (c connection) Poll(msg Msg, responseId Id) *Msg {
+func (c *Connection) Poll(msg Msg, responseId Id) *Msg {
 	// Polling on a terminated channel is not allowed
 	if c.terminated {
 		return nil
@@ -84,7 +86,7 @@ func (c connection) Poll(msg Msg, responseId Id) *Msg {
 
 
 // Handler is a goroutine that will check for incoming messages and call a callback for each
-func Handler(c connection, callback Callback) {
+func Handler(c *Connection, callback Callback) {
 	var responseId Id = 0xFFFFFFFF
 	for !c.terminated {
 		select {
@@ -103,7 +105,7 @@ func Handler(c connection, callback Callback) {
 			}
 		} else {
 			// No messages found, sleep for some time
-			time.Sleep(c.sleepInterval * time.Millisecond)
+			time.Sleep(c.sleepInterval)
 		}
 		// Check for poll timeout
 		if  responseId!=0xFFFFFFFF && time.Since(c.pollTime)>c.timeout {
@@ -113,35 +115,35 @@ func Handler(c connection, callback Callback) {
 	}
 }
 
-func (c connection) SdoRead(nodeId uint16, index uint16, subIndex uint8, byteCount int) (int, error) {
+func (c *Connection) SdoRead(nodeId uint8, index Index, subIndex Subindex, byteCount int) (int, error) {
 	var sdoReadOpcode = [5]uint8 {0x40, 0x4C, 0x48, 0x44, 0x40}
 	if byteCount<0 || byteCount>4 {
 		return 0, fmt.Errorf("Byte count ws %d, must be 1..4", byteCount)
 	}
 	msg := Msg{
-		Id: Id(0x600+nodeId),
+		Id: Id(0x600)+Id(nodeId),
 		Type: MESSAGE_STANDARD,
 		Len:8,
-		Data:[8]uint8{sdoReadOpcode[byteCount],uint8(index&0xFF),uint8(index>>8),subIndex,0,0,0,0} }
-	resp := c.Poll(msg, Id(0x580+nodeId))
+		Data:[8]uint8{sdoReadOpcode[byteCount],uint8(index&0xFF),uint8(index>>8),uint8(subIndex),0,0,0,0} }
+	resp := c.Poll(msg, Id(0x580)+Id(nodeId))
 	if resp==nil {
 		return 0, fmt.Errorf("No response")
 	}
 	return int(resp.Data[4])+int(resp.Data[5])*256 + int(resp.Data[6])*256*256+int(resp.Data[7])*256*256*256 , nil
 }
 
-func (c connection) SdoWrite(nodeId uint16, index uint16, subIndex uint8, byteCount int, value int) error {
+func (c *Connection) SdoWrite(nodeId uint8, index uint16, subIndex uint8, byteCount int, value int) error {
 	var sdoReadOpcode = [5]uint8 {0x40, 0x4C, 0x48, 0x44, 0x40}
 	if byteCount<0 || byteCount>4 {
 		return fmt.Errorf("byte count was %d, must be 1..4", byteCount)
 	}
 	msg := Msg{
-		Id: Id(0x600+nodeId),
+		Id: Id(0x600)+Id(nodeId),
 		Type: MESSAGE_STANDARD,
 		Len:8,
 		Data:[8]uint8{sdoReadOpcode[byteCount],uint8(index&0xFF),uint8(index>>8),subIndex,
 			uint8(value&0xFF),uint8((value>>8)&0xFF),uint8((value>>16)&0xFF),uint8((value>>24)&0xFF)} }
-	resp := c.Poll(msg, Id(0x580+nodeId))
+	resp := c.Poll(msg, Id(0x580)+Id(nodeId))
 	if resp==nil {
 		return fmt.Errorf("sdo write to node %d timed out", nodeId)
 	}
@@ -151,18 +153,37 @@ func (c connection) SdoWrite(nodeId uint16, index uint16, subIndex uint8, byteCo
 	return nil
 }
 
-func (c connection) Close() {
-	c.terminated = true
-	// Wait for go routine to terminate
-	time.Sleep(c.sleepInterval)
-	c.Dev.Uninitialize()
+func (c *Connection) SetOperational(nodeId uint8) {
+	msg := Msg{
+		Id: Id(0x600)+Id(nodeId),
+		Type: MESSAGE_STANDARD,
+		Len:2,
+		Data:[8]uint8{1,nodeId,0,0,0,0,0,0} }
+	c.Dev.Write(msg)
 }
 
-func NewConnection(d Device, timeout time.Duration, callback Callback) *connection {
-	c := connection{Dev: d, timeout: timeout}
+func (c *Connection) SetPreoperational(nodeId uint8) {
+	msg := Msg{
+		Id: Id(0x600+int(nodeId)),
+		Type: MESSAGE_STANDARD,
+		Len:2,
+		Data:[8]uint8{128,nodeId,0,0,0,0,0,0} }
+	c.Dev.Write(msg)
+}
+
+func (c *Connection) Close() {
+	c.terminated = true
+	// Wait for go routine to terminate
+	time.Sleep(2*c.sleepInterval)
+	c.Dev.Close()
+}
+
+func NewConnection(d Device, timeout time.Duration, callback Callback) *Connection {
+	c := Connection{Dev: d, timeout: timeout}
 	c.mutex = sync.Mutex{}
+	c.sleepInterval = 10*time.Millisecond
 	c.requestChan = make(chan Id, 1)
 	c.responseChan = make(chan *Msg, 1)
-	go Handler(c, callback)
+	go Handler(&c, callback)
 	return &c
 }

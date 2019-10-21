@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"go-can/can"
+	"go-can/peak"
 	"go-can/virtual"
 	"time"
 )
@@ -12,19 +13,19 @@ func handler(m *can.Msg) {
 }
 
 func main() {
-	fmt.Printf("Setting up adapter and connection\n")
-	connection := can.NewConnection(
-		// peak.New(peak.PCAN_USBBUS1, 125000),
+	fmt.Printf("Setting up adapter and bus\n")
+	connection := connection.New(
+		//peak.New(peak.PCAN_USBBUS1, 125000),
 		virtual.New(0,125000),
 		100*time.Millisecond,
 		handler)
 
 	fmt.Println("Sending a message (sdo read)")
-	msg := can.Msg{Id:1547, Type:can.MESSAGE_STANDARD, Len:8, Data:[8]uint8{64,3,16,0,0,0,0,0} }
+	msg := can.Msg{Id:1547, Type:can.Standard, Len:8, Data:[8]uint8{64,3,16,0,0,0,0,0} }
 	connection.Dev.Write(msg)
 	time.Sleep(100*time.Millisecond)
 
-	fmt.Println("Polling on connection")
+	fmt.Println("Polling on bus")
 	m:=connection.Poll(msg, 0x58B)
 	if m==nil {
 		fmt.Printf("No response from peak canbus poll ")

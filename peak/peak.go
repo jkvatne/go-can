@@ -75,7 +75,7 @@ var (
 	CAN_GetErrorText, _ = syscall.GetProcAddress(peak, "CAN_GetErrorText")
 )
 
-
+// Total Microseconds = micros + 1000 * millis + 0x100000000 * 1000 * millis_overflow
 type canTimeStamp struct {
 	Millisec         uint32 // [("millis", c_ulong),           // Base-value: milliseconds: 0.. 2^32-1
 	MillisecOverflow uint16 // ("millis_overflow", c_ushort),  // Roll-arounds of millis
@@ -95,17 +95,6 @@ func convertError(e uintptr) can.Status {
 	} else {
 		return can.Error
 	}
-}
-
-func (p *peakChannel) Initialize(Btr0Btr1 uint16) error {
-	ret, _, callErr := syscall.Syscall6(uintptr(CAN_Initialize), 5, uintptr(p.channel), uintptr(Btr0Btr1), uintptr(0), uintptr(0), uintptr(0), 0)
-	if ret!=0 {
-		return fmt.Errorf("Initialize error %d", ret)
-	}
-	if callErr!=0 {
-		return fmt.Errorf("Initialize error %d", callErr)
-	}
-	return nil
 }
 
 func (p *peakChannel) Reset() {
@@ -165,7 +154,7 @@ func (p *peakChannel) Write(msg can.Msg) {
 	}
 }
 
-func New(channel uint8, bitrate int) *peakChannel {
+func (p *peakChannel) Initialize(bitrate int) error {
 	var Btr0Btr1 uint16
 	switch bitrate {
 	case 1000000:
@@ -187,9 +176,20 @@ func New(channel uint8, bitrate int) *peakChannel {
 	case 10000:
 		Btr0Btr1 = pPCAN_BAUD_10K
 	}
+	ret, _, callErr := syscall.Syscall6(uintptr(CAN_Initialize), 5, uintptr(p.channel), uintptr(Btr0Btr1), uintptr(0), uintptr(0), uintptr(0), 0)
+	if ret!=0 {
+		return fmt.Errorf("Initialize error %d", ret)
+	}
+	if callErr!=0 {
+		return fmt.Errorf("Initialize error %d", callErr)
+	}
+	return nil
+}
 
+
+func New(channel uint8, bitrate int) *peakChannel {
 	bus := &peakChannel{channel: channel}
-	err := bus.Initialize(Btr0Btr1)
+	err := bus.Initialize(bitrate)
 	if err!=nil {
 		return nil
 	}

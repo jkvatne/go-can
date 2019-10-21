@@ -14,7 +14,7 @@ var response *can.Msg
 // TestPeak assumes a CAN-Open node with id=11 is conneted. It polls a SDO at 1547 = 0x060B
 func TestPeak(t *testing.T) {
 	c := peak.New(peak.PCAN_USBBUS1,125000)
-	msg := can.Msg{Id:1547, Type:can.MESSAGE_STANDARD, Len:8, Data:[8]uint8{0x40,0,16,0,0,0,0,0} }
+	msg := can.Msg{Id:1547, Type:can.Standard, Len:8, Data:[8]uint8{0x40,0,16,0,0,0,0,0} }
 	c.Write(msg)
 	time.Sleep(100*time.Millisecond)
 	response:=c.Read()

@@ -1,9 +1,10 @@
-package can_test
+package bus_test
 
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"go-can/can"
+	"go-can/bus"
 	"go-can/peak"
 	"testing"
 	"time"
@@ -20,22 +21,21 @@ func handler(m *can.Msg) {
 	response = *m
 }
 
-
-func TestPeak(t *testing.T) {
-	fmt.Printf("Setting up adapter and Connection\n")
-	connection := can.NewConnection(
+func TestConnectin(t *testing.T) {
+	fmt.Printf("Setting up adapter and State\n")
+	bus := bus.New(
 		peak.New(peak.PCAN_USBBUS1, 125000),
 		100*time.Millisecond,
 		handler)
 
 	fmt.Println("Sending a message (sdo read)")
-	msg := can.Msg{Id:1547, Type:can.MESSAGE_STANDARD, Len:8, Data:[8]uint8{0x40,0,0x10,0,0,0,0,0} }
-	connection.Dev.Write(msg)
+	msg := can.Msg{Id:1547, Type:can.Standard, Len:8, Data:[8]uint8{0x40,0,0x10,0,0,0,0,0} }
+	bus.Write(msg)
 	time.Sleep(100*time.Millisecond)
 	assert.Equal(t, expectedMsg, response,  "Error")
 
-	fmt.Println("Polling on Connection")
-	m:=connection.Poll(msg, 0x58B)
+	fmt.Println("Polling on State")
+	m:=bus.Poll(msg, 0x58B)
 	if m==nil {
 		fmt.Printf("No response from peak canbus poll ")
 	} else {
@@ -43,10 +43,7 @@ func TestPeak(t *testing.T) {
 	}
 	assert.Equal(t, expectedMsg, *m,  "Error")
 
-	fmt.Println("Testing SdoRead()")
-	devId, _ := connection.SdoRead(11, 0x1000, 0, 4)
-	fmt.Printf("SdoRead from index 0x1000 from node 11, result is %d\n", devId)
 	time.Sleep(time.Second)
-	connection.Close()
+	bus.Close()
 	fmt.Printf("Done\n")
 }

@@ -17,7 +17,7 @@ type virtualChannel struct {
 var _ can.Device = &virtualChannel{}
 
 
-func (p *virtualChannel) Initialize() error {
+func (p *virtualChannel) Initialize(bitrate int) error {
 	return nil
 }
 
@@ -51,6 +51,6 @@ func (p *virtualChannel) Write(msg can.Msg) {
 func New(channel uint8, bitrate int) *virtualChannel {
 	dev := &virtualChannel{channel: channel, speed: bitrate}
 	dev.open = true
-	dev.Initialize()
+	dev.Initialize(bitrate)
 	return dev
 }

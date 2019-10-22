@@ -18,6 +18,8 @@ type Node struct {
 	HeartbeatCount int
 	State          int
 	Failed         bool
+	LastEmcyMsg    [8]byte
+	EmcyCount      int
 }
 
 var Nodes[127] *Node
@@ -65,6 +67,10 @@ func MsgHandler(msg *can.Msg) {
 		}
 	} else if funcCode == FUNC_TXPDO1 {
 		Nodes[nodeId].HandlePdo((funcCode+1)/2-1, msg.Data)
+
+	} else if funcCode == FUNC_EMCY {
+		Nodes[nodeId].HandleEmcy(msg.Data)
+		Nodes[nodeId].EmcyCount++
 	} else {
 		fmt.Printf("Unknown msg with func=%d\n", funcCode)
 	}
@@ -82,6 +88,10 @@ func (node *Node) SetPreOperational() {
 	node.Bus.Write(can.NewStdMsg(0, []uint8{128,uint8(node.Id)}))
 }
 
+func (node *Node) HandleEmcy(msg [8]uint8) {
+	node.LastEmcyMsg = msg
+}
+
 func (node *Node) HandlePdo(no int, data [8]uint8) {
 	fmt.Printf("PDO %d data=%d, %d, %d, %d, %d, %d, %d %d\n", no, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7])
 }
@@ -93,16 +103,21 @@ func NewMuxMsg(base int, nodeId NodeId, op uint8, index Index, subIndex SubIndex
 }
 
 func (node *Node) ReadObject(index Index, subIndex SubIndex, byteCount uint8) (int, error) {
-	var sdoReadOpcode = [5]uint8 {0x40, 0x4C, 0x48, 0x44, 0x40}
+	var sdoReadOpcode = [5]uint8 {0x40, 0x4F, 0x4B, 0x47, 0x43}
+	var mask = [5]int{0, 0xFF, 0xFFFF, 0xFFFFFF, 0xFFFFFFFF}
 	if byteCount<1 || byteCount>4 {
 		return 0, fmt.Errorf("Byte count was %d, must be 1..4", byteCount)
 	}
-	msg := NewMuxMsg(0x600, node.Id, sdoReadOpcode[byteCount], index, subIndex, 0)
+	msg := NewMuxMsg(0x600, node.Id, 0x40 /*sdoReadOpcode[byteCount]*/, index, subIndex, 0)
+
 	resp := node.Bus.Poll(msg, DefaultId(0x580, node.Id))
 	if resp==nil {
 		return 0, fmt.Errorf("no response")
 	}
-	return int(resp.Data[4])+int(resp.Data[5])*256 + int(resp.Data[6])*256*256+int(resp.Data[7])*256*256*256 , nil
+	if resp.Data[0]!=sdoReadOpcode[byteCount] {
+		return 0, fmt.Errorf("Read Object size mismatch for %x:%d, got opcode=%x, expected %x",index,subIndex, resp.Data[0], sdoReadOpcode[byteCount])
+	}
+	return mask[byteCount]&(int(resp.Data[4])+int(resp.Data[5])*256 + int(resp.Data[6])*256*256+int(resp.Data[7])*256*256*256) , nil
 }
 
 func (node *Node) WriteObject(index Index, subIndex SubIndex, byteCount uint8, value int) error {
@@ -121,27 +136,48 @@ func (node *Node) WriteObject(index Index, subIndex SubIndex, byteCount uint8, v
 	return nil
 }
 
-func (node Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, expected int, description string) {
-	value, err := node.ReadObject(index, subIndex, byteCount)
-	if err!=nil {
+func (node *Node) VerifyReadAbort(index Index, subIndex SubIndex, byteCount uint8, description string) {
+	msg := NewMuxMsg(0x600, node.Id, 0x40, index, subIndex, 0)
+	resp := node.Bus.Poll(msg, DefaultId(0x580, node.Id))
+	if resp==nil {
 		node.Failed = true
-		fmt.Printf("Error reading Object %x:%d (%s)", index, subIndex, description)
+		fmt.Printf("Polling returned no data for %x:%d (%s)", index, subIndex, description)
+		return
 	}
-	if  value!=expected {
+	if resp.Data[0]!=0x80 {
 		node.Failed = true
-		fmt.Printf("Expected %x, Actual %x, %s", expected, value, description)
+		fmt.Printf("Expected abort code, got data for %x:%d (%s)", index, subIndex, description)
 	}
 }
 
-func (node Node) VerifyRange(index Index, subIndex SubIndex, byteCount uint8, min int, max int, description string) {
+func (node *Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, expected int, description string) {
 	value, err := node.ReadObject(index, subIndex, byteCount)
 	if err!=nil {
 		node.Failed = true
-		fmt.Printf("Error reading Object %x:%d (%s)", index, subIndex, description)
+		fmt.Printf("Error reading Object %x:%d (%s), error %s\n", index, subIndex, description, err)
+	}
+	if  value!=expected {
+		node.Failed = true
+		fmt.Printf("Expected %x, Actual %x, %s\n", expected, value, description)
+	}
+}
+
+func (node *Node) VerifyRange(index Index, subIndex SubIndex, byteCount uint8, min int, max int, description string) {
+	value, err := node.ReadObject(index, subIndex, byteCount)
+	if err!=nil {
+		node.Failed = true
+		fmt.Printf("Error reading Object %x:%d (%s)\n", index, subIndex, description)
 	}
 	if  value<min || value>max {
 		node.Failed = true
-		fmt.Printf("Expected %x..%x, Actual %x, %s", min, max, value, description)
+		fmt.Printf("Expected %x..%x, Actual %x, %s\n", min, max, value, description)
+	}
+}
+
+func (node *Node) Verify(cond bool, msg string, par...interface{}) {
+	if !cond {
+		node.Failed = true
+		fmt.Printf(msg+"\n", par)
 	}
 }
 

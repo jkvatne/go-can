@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"go-can/can"
-	"go-can/peak"
 	"go-can/virtual"
 	"time"
 )

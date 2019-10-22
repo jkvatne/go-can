@@ -20,6 +20,14 @@ type State struct {
 type MsgHandler func(msg *can.Msg)
 var Handler MsgHandler
 
+func (c *State) Status() can.Status {
+	return c.dev.Status()
+}
+
+func (c *State) Reset() {
+	c.dev.Reset()
+}
+
 func (c *State) Poll(msg can.Msg, responseId can.CobId) *can.Msg {
 	// Polling on a terminated channel is not allowed
 	if c.terminated {
@@ -30,7 +38,6 @@ func (c *State) Poll(msg can.Msg, responseId can.CobId) *can.Msg {
 	defer c.mutex.Unlock()
 	c.requestChan<-responseId
 	c.dev.Write(msg)
-	//_, _, _ = syscall.Syscall6(uintptr(CAN_Write), 2, uintptr(c.channel), uintptr(unsafe.Pointer(&msg)),0,0,0,0)
 	resp :=<-c.responseChan
 	return resp
 }

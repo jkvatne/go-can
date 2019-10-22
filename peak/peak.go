@@ -3,12 +3,14 @@ package peak
 import (
 	"fmt"
 	"go-can/can"
+	"os"
 	"syscall"
 	"unsafe"
 )
 
 type peakChannel struct {
 	channel uint8
+	bitrate int
 	status  can.Status
 }
 
@@ -59,6 +61,8 @@ const (
 	pPCAN_ERROR_ILLDATA       = uintptr(0x20000)  // Invalid data, function, or action
 	pPCAN_ERROR_INITIALIZE    = uintptr(0x40000)  // peakChannel is not initialized
 	pPCAN_ERROR_ILLOPERATION  = uintptr(0x80000)  // Invalid operation
+
+	PCAN_BUSOFF_AUTORESET  = 0x07
 )
 
 var (
@@ -71,7 +75,7 @@ var (
 	CAN_Write, _ = syscall.GetProcAddress(peak, "CAN_Write")
 	CAN_FilterMessages, _ = syscall.GetProcAddress(peak, "CAN_FilterMessages")
 	CAN_GetValue, _ = syscall.GetProcAddress(peak, "CAN_GetValue")
-	CAN_SetValue, _ = syscall.GetProcAddress(peak, "CAN_SetValue	")
+	CAN_SetValue, _ = syscall.GetProcAddress(peak, "CAN_SetValue")
 	CAN_GetErrorText, _ = syscall.GetProcAddress(peak, "CAN_GetErrorText")
 )
 
@@ -98,7 +102,9 @@ func convertError(e uintptr) can.Status {
 }
 
 func (p *peakChannel) Reset() {
-	_, _, _ = syscall.Syscall6(uintptr(CAN_Reset), 1, uintptr(p.channel),0,0,0,0,0)
+//	_, _, _ = syscall.Syscall6(uintptr(CAN_Reset), 1, uintptr(p.channel),0,0,0,0,0)
+	p.Close()
+	p.Initialize(p.bitrate)
 }
 
 func (p *peakChannel) Close() {
@@ -136,7 +142,7 @@ func (p *peakChannel) Read() *can.Msg {
 	}
 	if msg.Type > 2 {
 		p.status = convertError(uintptr(msg.Data[3]))
-		fmt.Printf("Got message with status data, status=%s\n",p.StatusString())
+		//fmt.Printf("Got message with status data, status=%s, msg=%s\n",p.StatusString(),msg.ToString())
 		return nil
 	}
 	if ret==pPCAN_ERROR_QRCVEMPTY {
@@ -154,8 +160,11 @@ func (p *peakChannel) Write(msg can.Msg) {
 	}
 }
 
+var value = 1
+
 func (p *peakChannel) Initialize(bitrate int) error {
 	var Btr0Btr1 uint16
+	p.bitrate = bitrate
 	switch bitrate {
 	case 1000000:
 		Btr0Btr1 = pPCAN_BAUD_1M
@@ -182,6 +191,14 @@ func (p *peakChannel) Initialize(bitrate int) error {
 	}
 	if callErr!=0 {
 		return fmt.Errorf("Initialize error %d", callErr)
+	}
+	if unsafe.Pointer(CAN_SetValue) == nil {
+		fmt.Printf("CAN_SetValue==nil")
+		os.Exit(255)
+	}
+	ret, _ , callErr = syscall.Syscall6(uintptr(CAN_SetValue), 4, uintptr(p.channel), uintptr(PCAN_BUSOFF_AUTORESET), uintptr(unsafe.Pointer(&value)), uintptr(4),0,0)
+	if callErr!=0 || ret!=0 {
+		return fmt.Errorf("Set pcan busoff autoreset error %d", callErr)
 	}
 	return nil
 }

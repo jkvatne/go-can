@@ -7,3 +7,4 @@ type Psu interface {
 	DisableOutput(channel int) error
 	Shutdown()
 }
+

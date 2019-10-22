@@ -1,9 +1,12 @@
 package node
 
 import (
+	"encoding/binary"
 	"fmt"
-	"go-can/can"
+	"github.com/gookit/color"
 	"go-can/bus"
+	"go-can/can"
+	"math"
 )
 
 type NodeId uint8
@@ -20,13 +23,12 @@ type Node struct {
 	Failed         bool
 	LastEmcyMsg    [8]byte
 	EmcyCount      int
+	PdoCount       [5]int
+	rxPdo          [5][8]byte  // Data received from node
+	txPdo          [5][8]byte  // Data to send to node
 }
 
 var Nodes[127] *Node
-
-func AddNode(node *Node) {
-	Nodes[node.Id] = node
-}
 
 const (
 	FUNC_NMT    = 0x00
@@ -41,11 +43,47 @@ const (
 	FUNC_RXPDO3 = 0x08
 	FUNC_TXPDO4 = 0x09
 	FUNC_RXPDO4 = 0x0A
-	FUNC_TXSDO  = 0x0B
-	FUNC_RXSDO  = 0x0C
 	FUNC_HEARTBEAT = 0x0E
 	FUNC_MGMT   = 0x0F
 )
+
+func (node *Node) SetPdoValue(pdoNo int, offset int, count int, value int) {
+	for i:=offset; i<count+offset; i++ {
+		node.txPdo[pdoNo][i] = uint8(value & 0xFF)
+		value = value >> 8
+	}
+}
+
+func (node *Node) SendPdo(pdoNo int) {
+	msg := can.Msg{Id: can.CobId(pdoNo*0x100+0x100+int(node.Id)), Len: 8}
+	for i:=0; i<8; i++ {
+		msg.Data[i] = node.txPdo[pdoNo][i]
+	}
+	node.Bus.Write(msg)
+}
+
+func (node *Node) GetPdoInt16(pdoNo int, ofs int) int {
+	var value int
+	value = int(node.rxPdo[pdoNo][ofs])
+	value += int(node.rxPdo[pdoNo][ofs+1])*256
+	return value
+}
+
+func (node *Node) VerifyPdoInt16(pdoNo int, ofs, min int, max int, msg string) {
+	value := node.GetPdoInt16(pdoNo, ofs)
+	if value<min || value>max {
+		node.Failed = true
+		color.Error.Printf("Pdo %d value at ofs=%d was %d, should be %d..%d, %s\n", pdoNo, ofs, value, min, max, msg)
+	}
+}
+
+func (node *Node) VerifyPdoCount(n1 int, n2 int, n3 int, n4 int) {
+	if n1!= node.PdoCount[1] || n2!= node.PdoCount[2] || n3!= node.PdoCount[3] || n4!= node.PdoCount[4] {
+		node.Failed = true
+		color.Error.Printf("Expected %d, %d, %d, %d pdos, got %d, %d, %d, %d\n", n1,n2,n3,n4,
+			node.PdoCount[1], node.PdoCount[2], node.PdoCount[3], node.PdoCount[4])
+	}
+}
 
 func DefaultId(base int, nodeId NodeId) can.CobId {
 	return can.CobId(base)+can.CobId(nodeId)
@@ -55,24 +93,23 @@ func MsgHandler(msg *can.Msg) {
 	funcCode := (int(msg.Id) & 0x780) >> 7
 	nodeId := int(msg.Id) & 0x07F
 
-	if funcCode == FUNC_TXSDO {
-		// Handle received sdo request from external node
-		// If the node id is own id, return a value from own object dictionary
-		// Skip if the request was to another slave
+	if msg.Id == 0x80 {
+		// Got sync message from another node
 	} else if funcCode==FUNC_HEARTBEAT {
 		// Incoming heartbeat messages
 		if Nodes[nodeId]!=nil {
 			Nodes[nodeId].HeartbeatCount++
 			Nodes[nodeId].State = int(msg.Data[0])
 		}
-	} else if funcCode == FUNC_TXPDO1 {
+	} else if funcCode >= FUNC_TXPDO1 && funcCode <= FUNC_RXPDO4 {
 		Nodes[nodeId].HandlePdo((funcCode+1)/2-1, msg.Data)
 
 	} else if funcCode == FUNC_EMCY {
 		Nodes[nodeId].HandleEmcy(msg.Data)
 		Nodes[nodeId].EmcyCount++
+
 	} else {
-		fmt.Printf("Unknown msg with func=%d\n", funcCode)
+		//fmt.Printf("Unknown msg with func=%d\n", funcCode)
 	}
 }
 
@@ -93,7 +130,10 @@ func (node *Node) HandleEmcy(msg [8]uint8) {
 }
 
 func (node *Node) HandlePdo(no int, data [8]uint8) {
-	fmt.Printf("PDO %d data=%d, %d, %d, %d, %d, %d, %d %d\n", no, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7])
+	for i:=0; i<8; i++ {
+		node.rxPdo[no][i] = data[i]
+	}
+	node.PdoCount[no]++
 }
 
 func NewMuxMsg(base int, nodeId NodeId, op uint8, index Index, subIndex SubIndex, Value int) can.Msg {
@@ -141,12 +181,12 @@ func (node *Node) VerifyReadAbort(index Index, subIndex SubIndex, byteCount uint
 	resp := node.Bus.Poll(msg, DefaultId(0x580, node.Id))
 	if resp==nil {
 		node.Failed = true
-		fmt.Printf("Polling returned no data for %x:%d (%s)", index, subIndex, description)
+		color.Error.Printf("Polling returned no data for %x:%d (%s)\n", index, subIndex, description)
 		return
 	}
 	if resp.Data[0]!=0x80 {
 		node.Failed = true
-		fmt.Printf("Expected abort code, got data for %x:%d (%s)", index, subIndex, description)
+		color.Error.Printf("Expected abort code, got data for %x:%d (%s)\n", index, subIndex, description)
 	}
 }
 
@@ -154,11 +194,11 @@ func (node *Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, e
 	value, err := node.ReadObject(index, subIndex, byteCount)
 	if err!=nil {
 		node.Failed = true
-		fmt.Printf("Error reading Object %x:%d (%s), error %s\n", index, subIndex, description, err)
+		color.Error.Printf("Error reading Object %x:%d (%s), error %s\n", index, subIndex, description, err)
 	}
 	if  value!=expected {
 		node.Failed = true
-		fmt.Printf("Expected %x, Actual %x, %s\n", expected, value, description)
+		color.Error.Printf("Expected %x, Actual %x, %s\n", expected, value, description)
 	}
 }
 
@@ -166,18 +206,40 @@ func (node *Node) VerifyRange(index Index, subIndex SubIndex, byteCount uint8, m
 	value, err := node.ReadObject(index, subIndex, byteCount)
 	if err!=nil {
 		node.Failed = true
-		fmt.Printf("Error reading Object %x:%d (%s)\n", index, subIndex, description)
+		color.Error.Printf("Error reading Object %x:%d (%s)\n", index, subIndex, description)
 	}
 	if  value<min || value>max {
 		node.Failed = true
-		fmt.Printf("Expected %x..%x, Actual %x, %s\n", min, max, value, description)
+		color.Error.Printf("Expected %x..%x, Actual %x, %s\n", min, max, value, description)
+	}
+}
+
+func Float32frombytes(bytes []byte) float32 {
+	bits := binary.LittleEndian.Uint32(bytes)
+	float := math.Float32frombits(bits)
+	return float
+}
+
+func (node *Node) VerifyRangeFloat(index Index, subIndex SubIndex, min float64, max float64, description string) {
+	value, err := node.ReadObject(index, subIndex, 4)
+	if err!=nil {
+		node.Failed = true
+		color.Error.Printf("Error reading float value in object %x:%d (%s) %s\n", index, subIndex, description, err)
+	}
+	bs := make([]byte, 8)
+	binary.LittleEndian.PutUint32(bs, uint32(value))
+	floatValue := Float32frombytes(bs)
+	if floatValue<float32(min) || floatValue>float32(max) {
+		node.Failed = true
+		color.Error.Printf("Error reading float value in %x:%d, expected %0.3f..%0.3f, was %0.3f, %s\n",
+			index, subIndex, min, max,floatValue, description)
 	}
 }
 
 func (node *Node) Verify(cond bool, msg string, par...interface{}) {
 	if !cond {
 		node.Failed = true
-		fmt.Printf(msg+"\n", par)
+		color.Error.Printf(msg+"\n", par)
 	}
 }
 

@@ -11,7 +11,7 @@ type Status uint32
 type Callback func(msg *Msg)
 
 type Msg struct {
-	Id CobId           // 11/29-bit message identifier
+	Id CobId        // 11/29-bit message identifier
 	Type MsgType    // MsgType of the message
 	Len uint8       // Data Length of the message (0..8)
 	Data [8]uint8   // Data of the message, 8 bytes

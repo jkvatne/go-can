@@ -120,8 +120,8 @@ func (psu *TtiUsbPsu) GetOutput(channel int) (float64, float64, error) {
 
 // Shutdown will turn off all outputs and close the communication
 func (psu *TtiUsbPsu) Shutdown() {
-	psu.DisableOutput(1)
-	psu.DisableOutput(2)
-	psu.port.Close()
+	_ = psu.DisableOutput(1)
+	_ = psu.DisableOutput(2)
+	_ = psu.port.Close()
 }
 

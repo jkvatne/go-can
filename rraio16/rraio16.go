@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/gookit/color"
 	"go-can/bus"
 	"go-can/node"
 	"go-can/peak"
@@ -17,6 +18,22 @@ const (
 	ISOLATION_PDO_COUNT = 0x5022
 	DIGITAL_ISO_OUT     = 0x5501    // baDouIniStat
 	DIGITAL_PASSIVE_OUT = 0x5504    // baDouPassive
+)
+const (
+SENS_NONE        = 0
+SENS_MA          = 1
+SENS_20MA        = 2
+SENS_VOLT        = 3
+SENS_VOLT_OUT    = 4
+SENS_MA_OUT      = 5
+SENS_DIG_OUT     = 6
+SENS_FREQ        = 7
+SENS_DIG_IN      = 8
+SENS_QUADRATURE  = 10
+SENS_FREQX10     = 11
+SENS_FREQX100    = 12
+SENS_MA_SCALED   = 21
+SENS_VOLT_SCALED = 23
 )
 
 var nodeId = 11
@@ -127,14 +144,57 @@ func VerifyPdoParameters(node *node.Node) {	node.VerifyEqual(0x1400, 0, 1, 3, "R
 	node.VerifyEqual(0x1A03, 4, 4, 0x24011010, "Tx pdo mapping 4")
 }
 
-func VerifyRxPdo(node *node.Node) {
-	node.SetOperational()
-	time.Sleep(50*time.Millisecond)
-	// Send 12 sync pulses
-	for i:=0; i<13; i++ {
-		node.Bus.SendSync()
+func VerifyDigOut(n *node.Node) {
+	fmt.Printf("Testing digital outputs, reading voltage back\n")
+	n.SetOperational()
+	time.Sleep(10*time.Millisecond)
+	// Turn on both outputs
+	n.SetPdoValue(1, 0, 1, 1)
+	n.SendPdo(1)
+	time.Sleep(100*time.Millisecond)
+	n.SendPdo(1)
+	time.Sleep(100*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 1, 23.0, 25.0, "First digital output 1 voltage readback should be high" )
+	n.VerifyRangeFloat(0x4021, 2, 0.0, 0.5, "First digital output 2 voltage readbck" )
+	time.Sleep(100*time.Millisecond)
+	n.SetPdoValue(1, 0, 1, 2)
+	n.SendPdo(1)
+	time.Sleep(100*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 1, 0.0, 0.5, "Second digital output 1 voltage readbck" )
+	n.VerifyRangeFloat(0x4021, 2, 23.0, 25.0, "Second digital output 2 voltage readbck  should be high" )
+}
+
+func VerifyRxPdo(n *node.Node) {
+	fmt.Printf("Testing rx pdo operation - transfer output values to card\n")
+	// Set input 3-8 to analog in
+	n.SetPreOperational()
+	for i:=3; i<9; i++ {
+		n.WriteObject(0x4010, node.SubIndex(i), 1, SENS_VOLT)
 		time.Sleep(50*time.Millisecond)
 	}
+
+	n.SetOperational()
+	time.Sleep(50*time.Millisecond)
+	n.SetPdoValue(4, 0, 2, 15000)
+	n.SendPdo(4)
+	time.Sleep(50*time.Millisecond)
+	// Send 12 sync pulses
+	for i:=0; i<12; i++ {
+		time.Sleep(100*time.Millisecond)
+		n.Bus.SendSync()
+		n.SendPdo(1)
+		n.SendPdo(2)
+		n.SendPdo(3)
+		n.SendPdo(4)
+	}
+	fmt.Printf("Number of pdos: %d, %d, %d, %d\n", n.PdoCount[1], n.PdoCount[2],n.PdoCount[3],n.PdoCount[4])
+	n.VerifyPdoCount(2, 5, 5, 3)
+	n.VerifyPdoInt16(2, 0, 14500, 15500, "Analog channel 5 should be ca 10V")
+	n.VerifyPdoInt16(3, 0, 14500, 15500, "Analog channel 9 should be ca 10mA")
+	// Wait 1000mS and check for timeout while we send sync messages
+	time.Sleep(3000 * time.Millisecond)
+	n.VerifyRange(0x2401, 9, 2, 0, 800, "After pdo timeout of 2.5 sec")
+	n.Bus.SendSync()
 }
 
 func  VerifyHeartbeat(node *node.Node) {
@@ -162,12 +222,25 @@ func  VerifyHeartbeat(node *node.Node) {
 }
 
 func main() {
+	fmt.Printf("This is a functional testing of RRAIO16 software\n")
+	fmt.Printf("A TTi power supply connected via USB will be used if present. Fallback is manual settings.\n")
+	fmt.Printf("The can bus is connected via a Peak USB adapter as device 1\n")
+	fmt.Printf("Power supply channel 1 is 10.000V, and must be connected to AI13 (treminal 23)\n")
+	fmt.Printf("Power supply channel 2 is 24.000V, and must be connected to terminal 1 and 9\n")
+	fmt.Printf("Power supply ground for cahnnel 1 and 2 must be connected to terminal 2 and 10\n\n")
 	fmt.Printf("Setting up adapter and bus\n")
-	pwr, _ := psu.NewTtiPsu("")
+
+	// Setup power supply
+	var pwr psu.Psu
+	pwr, _ = psu.NewTtiPsu("")
+	if pwr==nil {
+		pwr, _ = psu.NewManualPsu("")
+	}
 	_ = pwr.DisableOutput(1)
 	_ = pwr.DisableOutput(2)
-	time.Sleep(time.Millisecond*1000)
+	time.Sleep(time.Millisecond*100)
 
+	// Setup can bus peak usb adapter
 	b := bus.New(
 		peak.New(peak.PCAN_USBBUS1, 125000),
 		100*time.Millisecond)
@@ -176,25 +249,27 @@ func main() {
 
 	fmt.Printf("Turn on power, please wait...\n")
 	_ = pwr.SetOutput(1, 10.0, 0.1)
-	_ = pwr.SetOutput(2, 24.0, 0.3)
+	_ = pwr.SetOutput(2, 24.0, 0.5)
 	_ = pwr.EnableOutput(2)
 	_ = pwr.EnableOutput(1)
-	time.Sleep(time.Second*2)
+	time.Sleep(time.Millisecond*1500)
 	fmt.Printf("Verify bootup messages\n")
 	n.Verify(n.EmcyCount==1, "Emergency count should be 1, was %d", n.EmcyCount)
 	n.Verify(n.HeartbeatCount==1, "Emergency count should be 1, was %d", n.EmcyCount)
-	// We must reset here to get out of BusOff
-	b.Reset()
+
+	n.Reset()
+	// NB: The peak adapter needs 1.2sec delay after a reset!
+	time.Sleep(time.Millisecond*1200)
 
 	VerifyMandatoryObjects(n, 11, 250,3300, 0x622e38, 0x362e32, )
 	VerifyPdoParameters(n)
 	VerifyHeartbeat(n)
+	VerifyDigOut(n)
 	VerifyRxPdo(n)
 	if n.Failed {
-		fmt.Printf("******* Test failed!\n")
+		color.Error.Printf("Test failed!\n")
 	} else {
 		fmt.Printf("Test ok\n")
 	}
 	b.Close()
-	//p.Shutdown()
 }

@@ -82,7 +82,7 @@ func (c *State) SetPreoperational(nodeId uint8) {
 }
 
 func (c *State) SendSync() {
-	c.dev.Write(can.NewStdMsg(0x680, []uint8{}))
+	c.dev.Write(can.NewStdMsg(0x80, []uint8{}))
 }
 
 func (c *State) Write(msg can.Msg) {

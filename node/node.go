@@ -26,9 +26,11 @@ type Node struct {
 	PdoCount       [5]int
 	rxPdo          [5][8]byte  // Data received from node
 	txPdo          [5][8]byte  // Data to send to node
+	testNo         int
 }
 
 var Nodes[127] *Node
+var SubTest int
 
 const (
 	FUNC_NMT    = 0x00
@@ -46,6 +48,16 @@ const (
 	FUNC_HEARTBEAT = 0x0E
 	FUNC_MGMT   = 0x0F
 )
+
+func (node *Node) SkipTest(description string) bool {
+	node.testNo++
+	if SubTest>0 && SubTest!=node.testNo {
+		fmt.Printf("%d : skipping test\n", node.testNo)
+		return true
+	}
+	fmt.Printf("%d : %s\n", node.testNo, description)
+	return false
+}
 
 func (node *Node) SetPdoValue(pdoNo int, offset int, count int, value int) {
 	for i:=offset; i<count+offset; i++ {
@@ -113,7 +125,7 @@ func MsgHandler(msg *can.Msg) {
 	}
 }
 
-func (node *Node) Reset() {
+func (node *Node) ResetNode() {
 	node.Bus.Write(can.NewStdMsg(0, []uint8{129,uint8(node.Id)}))
 }
 
@@ -149,7 +161,6 @@ func (node *Node) ReadObject(index Index, subIndex SubIndex, byteCount uint8) (i
 		return 0, fmt.Errorf("Byte count was %d, must be 1..4", byteCount)
 	}
 	msg := NewMuxMsg(0x600, node.Id, 0x40 /*sdoReadOpcode[byteCount]*/, index, subIndex, 0)
-
 	resp := node.Bus.Poll(msg, DefaultId(0x580, node.Id))
 	if resp==nil {
 		return 0, fmt.Errorf("no response")
@@ -194,7 +205,7 @@ func (node *Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, e
 	value, err := node.ReadObject(index, subIndex, byteCount)
 	if err!=nil {
 		node.Failed = true
-		color.Error.Printf("Error reading Object %x:%d (%s), error %s\n", index, subIndex, description, err)
+		color.Error.Printf("Error reading Object %x:%d (%s), %s\n", index, subIndex, description, err)
 	}
 	if  value!=expected {
 		node.Failed = true
@@ -243,8 +254,8 @@ func (node *Node) Verify(cond bool, msg string, par...interface{}) {
 	}
 }
 
-func New(con *bus.State, id NodeId) *Node {
-	n:= &Node{Bus: con, Id: id}
+func New(con *bus.State, id int) *Node {
+	n:= &Node{Bus: con, Id: NodeId(id)}
 	Nodes[id] = n
 	return n
 }

@@ -37,7 +37,9 @@ func (c *State) Poll(msg can.Msg, responseId can.CobId) *can.Msg {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.requestChan<-responseId
+	time.Sleep(time.Millisecond)
 	c.dev.Write(msg)
+ 	time.Sleep(time.Millisecond*5)
 	resp :=<-c.responseChan
 	return resp
 }

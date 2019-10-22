@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"go-can/node"
 )
 
@@ -22,9 +21,11 @@ const (
 	IDENTITY            = 0x1018
 )
 
-func VerifyMandatoryObjects(node *node.Node, id uint8, vendor int, deviceType int, hw int, sw int) {
-	fmt.Println("Verify mandatory objects from 0x1000 to 0x1018")
-	//node.Bus.SetPreoperational(0)
+func VerifyMandatoryObjects(node *node.Node, id int, vendor int, deviceType int, hw int, sw int) {
+	if node.SkipTest("Verify mandatory objects from 0x1000 to 0x1018") {
+		return
+	}
+	node.Bus.SetPreoperational(0)
 	node.VerifyEqual(DEVICE_TYPE, 0, 4, deviceType, "Device type")
 	//TODO node.VerifyAbort(DEVICE_TYPE, 1, 4, 3300, "Device type")
 	node.VerifyEqual(ERROR_REGISTER, 0, 1, 0, "Error register")

@@ -75,12 +75,12 @@ func  (psu *TtiUsbPsu) Ask(query string) (string, error) {
 // SetOutput will set output voltage and current limit for a given channel
 func (psu *TtiUsbPsu) SetOutput(channel int, voltage float64, current float64) error {
 	// Turn off output (just in case it was on)
-	err := psu.Write(fmt.Sprintf("OP%d 0", channel))
-	if err!=nil {
-		return err
-	}
+	//err := psu.Write(fmt.Sprintf("OP%d 0", channel))
+	//if err!=nil {
+	//	return err
+	//}
 	// Set output voltage
-	err = psu.Write(fmt.Sprintf("V%d %0.3f", channel, voltage))
+	err := psu.Write(fmt.Sprintf("V%d %0.3f", channel, voltage))
 	if err!=nil {
 		return err
 	}

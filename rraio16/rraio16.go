@@ -10,6 +10,7 @@ import (
 	"go-can/psu"
 	"time"
 )
+var pwr psu.Psu
 
 const (
 	INPUT_16BIT         = 0x2401    // iaAnalogInput
@@ -43,6 +44,27 @@ var failed bool
 
 func SetOutput16bit(n *node.Node, channel int, value int) {
 	_ = n.WriteObject(OUTPUT_16BIT, node.SubIndex(channel), 2, value)
+}
+
+func VerifyAin(n *node.Node) {
+	if n.SkipTest("Testing analog inputs 3-8") {
+		return
+	}
+	n.WriteObject(0x4010, node.SubIndex(5), 1, SENS_VOLT)
+	_ = pwr.SetOutput(1, 0.0, 0.1)
+	time.Sleep(500*time.Millisecond)
+	_ = pwr.SetOutput(1, 0.1, 0.1)
+	time.Sleep(500*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 5, 0.05, 0.15, "supply is 0.1V" )
+	_ = pwr.SetOutput(1, 1.0, 0.1)
+	time.Sleep(200*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 5, 0.9, 1.1, "supply is 1V" )
+	_ = pwr.SetOutput(1, 20.0, 0.1)
+	time.Sleep(200*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 5, 19.95, 20.1, "supply is 20V" )
+	time.Sleep(100*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 5, 19.95, 20.1, "supply is 20V" )
+	n.WriteObject(0x4010, node.SubIndex(5), 1, SENS_DIG_IN)
 }
 
 func VerifyRxPdo(n *node.Node) {
@@ -126,7 +148,6 @@ func main() {
 	fmt.Printf("Setting up adapter and bus\n")
 
 	// Setup power supply
-	var pwr psu.Psu
 	pwr, _ = psu.NewTtiPsu("")
 	if pwr==nil {
 		pwr, _ = psu.NewManualPsu("")
@@ -159,6 +180,7 @@ func main() {
 	VerifyHeartbeat(n)
 	VerifyDigOut(n)
 	VerifyRxPdo(n)
+	VerifyAin(n)
 	if n.Failed {
 		color.Error.Printf("Test failed!\n")
 	} else {

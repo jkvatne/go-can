@@ -5,25 +5,33 @@ import (
 	"time"
 )
 
+func SendPdos(n *node.Node, count int, delay time.Duration) {
+	if delay<time.Millisecond {
+		panic("Time delay in SendPdos() is too small!")
+	}
+	for i := 0; i < count; i++ {
+		n.Bus.SendSync()
+		for pdoNo:=1; pdoNo<=node.PdoCount; pdoNo++ {
+			n.SendPdo(pdoNo)
+		}
+		time.Sleep(delay)
+	}
+}
+
 func VerifyDigOut(n *node.Node) {
-	if n.SkipTest("Testing digital outputs, reading voltage back") {
+	if n.SkipTest("Readback digital outputs") {
 		return
 	}
+	SetIsolationMode(n, 1000)
 	n.SetOperational()
-	time.Sleep(10*time.Millisecond)
-	// Turn on both outputs
+	// Turn on output 1
 	n.SetPdoValue(1, 0, 1, 1)
-	n.SendPdo(1)
-	time.Sleep(100*time.Millisecond)
-	n.SendPdo(1)
-	time.Sleep(100*time.Millisecond)
-	n.VerifyRangeFloat(0x4021, 1, 23.0, 25.0, "First digital output 1 voltage readback should be high" )
-	n.VerifyRangeFloat(0x4021, 2, 0.0, 0.5, "First digital output 2 voltage readbck" )
-	time.Sleep(100*time.Millisecond)
+	SendPdos(n,2, 100*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 1, Vsupply-1.0, Vsupply+0.5, "DO1 high readback" )
+	n.VerifyRangeFloat(0x4021, 2, -0.5, 0.5, "DO2 low readback" )
 	n.SetPdoValue(1, 0, 1, 2)
-	n.SendPdo(1)
-	time.Sleep(100*time.Millisecond)
-	n.VerifyRangeFloat(0x4021, 1, 0.0, 0.5, "Second digital output 1 voltage readbck" )
-	n.VerifyRangeFloat(0x4021, 2, 23.0, 25.0, "Second digital output 2 voltage readbck  should be high" )
+	SendPdos(n,2, 100*time.Millisecond)
+	n.VerifyRangeFloat(0x4021, 1, -0.5, 0.5, "DO1 low readback" )
+	n.VerifyRangeFloat(0x4021, 2, Vsupply-1.0,  Vsupply+0.5, "DO2 high readback" )
 }
 

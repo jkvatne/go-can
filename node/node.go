@@ -15,6 +15,12 @@ type SubIndex uint8
 type Callback func(msg *can.Msg)
 
 
+const (
+	PdoCount = 4
+	CanMessageSize = 8
+    MaxNodeId = 127
+)
+
 type Node struct {
 	Bus            *bus.State
 	Id             NodeId
@@ -23,13 +29,13 @@ type Node struct {
 	Failed         bool
 	LastEmcyMsg    [8]byte
 	EmcyCount      int
-	PdoCount       [5]int
-	rxPdo          [5][8]byte  // Data received from node
-	txPdo          [5][8]byte  // Data to send to node
+	RxPdosReceived [PdoCount]int
+	rxPdo          [PdoCount][CanMessageSize]byte  // Data received from node
+	txPdo          [PdoCount][CanMessageSize]byte  // Data to send to node
 	testNo         int
 }
 
-var Nodes[127] *Node
+var Nodes[MaxNodeId] *Node
 var SubTest int
 
 const (
@@ -47,41 +53,59 @@ const (
 	FUNC_RXPDO4 = 0x0A
 	FUNC_HEARTBEAT = 0x0E
 	FUNC_MGMT   = 0x0F
+	SYNC_COB_ID = 0x80
 )
 
 func (node *Node) SkipTest(description string) bool {
 	node.testNo++
 	if SubTest>0 && SubTest!=node.testNo {
-		fmt.Printf("%d : skipping test\n", node.testNo)
+		fmt.Printf("%d : Skipping test \"%s\"\n", node.testNo, description)
 		return true
 	}
 	fmt.Printf("%d : %s\n", node.testNo, description)
 	return false
 }
 
+// SetPdoValue will set a value in the node's txPdo[] data structure.
+// The offset and count defines where in the 8-byte array the data is stored
+// Actual transmission of data to the remote node is done with node.SendPdo(n)
 func (node *Node) SetPdoValue(pdoNo int, offset int, count int, value int) {
+	CheckPdoNo(pdoNo)
 	for i:=offset; i<count+offset; i++ {
-		node.txPdo[pdoNo][i] = uint8(value & 0xFF)
+		node.txPdo[pdoNo-1][i] = uint8(value & 0xFF)
 		value = value >> 8
 	}
 }
 
+// SendPdo will send a number of messages to the node.
 func (node *Node) SendPdo(pdoNo int) {
-	msg := can.Msg{Id: can.CobId(pdoNo*0x100+0x100+int(node.Id)), Len: 8}
-	for i:=0; i<8; i++ {
-		msg.Data[i] = node.txPdo[pdoNo][i]
+	// Verify that the given pdoNo is valid (1..4)
+	CheckPdoNo(pdoNo)
+	// Make the message from data in node.txPdo[]
+	msg := can.Msg{Id: can.CobId((pdoNo+1)*0x100+int(node.Id)), Len: 8}
+	for i:=0; i<CanMessageSize; i++ {
+		msg.Data[i] = node.txPdo[pdoNo-1][i]
 	}
+	// Send message
 	node.Bus.Write(msg)
 }
 
 func (node *Node) GetPdoInt16(pdoNo int, ofs int) int {
+	CheckPdoNo(pdoNo)
 	var value int
-	value = int(node.rxPdo[pdoNo][ofs])
-	value += int(node.rxPdo[pdoNo][ofs+1])*256
+	value = int(node.rxPdo[pdoNo-1][ofs])
+	value += int(node.rxPdo[pdoNo-1][ofs+1])*256
 	return value
 }
 
+func CheckPdoNo(pdoNo int) {
+	if pdoNo<1 || pdoNo>4 {
+		panic("Pdo number error")
+	}
+}
+
 func (node *Node) VerifyPdoInt16(pdoNo int, ofs, min int, max int, msg string) {
+	CheckPdoNo(pdoNo)
 	value := node.GetPdoInt16(pdoNo, ofs)
 	if value<min || value>max {
 		node.Failed = true
@@ -90,10 +114,10 @@ func (node *Node) VerifyPdoInt16(pdoNo int, ofs, min int, max int, msg string) {
 }
 
 func (node *Node) VerifyPdoCount(n1 int, n2 int, n3 int, n4 int) {
-	if n1!= node.PdoCount[1] || n2!= node.PdoCount[2] || n3!= node.PdoCount[3] || n4!= node.PdoCount[4] {
+	if n1!= node.RxPdosReceived[0] || n2!= node.RxPdosReceived[1] || n3!= node.RxPdosReceived[2] || n4!= node.RxPdosReceived[3] {
 		node.Failed = true
 		color.Error.Printf("Expected %d, %d, %d, %d pdos, got %d, %d, %d, %d\n", n1,n2,n3,n4,
-			node.PdoCount[1], node.PdoCount[2], node.PdoCount[3], node.PdoCount[4])
+			node.RxPdosReceived[0], node.RxPdosReceived[1], node.RxPdosReceived[2], node.RxPdosReceived[3])
 	}
 }
 
@@ -104,8 +128,10 @@ func DefaultId(base int, nodeId NodeId) can.CobId {
 func MsgHandler(msg *can.Msg) {
 	funcCode := (int(msg.Id) & 0x780) >> 7
 	nodeId := int(msg.Id) & 0x07F
-
-	if msg.Id == 0x80 {
+	if Nodes[nodeId]==nil {
+		return
+	}
+	if msg.Id == SYNC_COB_ID {
 		// Got sync message from another node
 	} else if funcCode==FUNC_HEARTBEAT {
 		// Incoming heartbeat messages
@@ -114,7 +140,15 @@ func MsgHandler(msg *can.Msg) {
 			Nodes[nodeId].State = int(msg.Data[0])
 		}
 	} else if funcCode >= FUNC_TXPDO1 && funcCode <= FUNC_RXPDO4 {
-		Nodes[nodeId].HandlePdo((funcCode+1)/2-1, msg.Data)
+		if funcCode==FUNC_TXPDO1 {
+			Nodes[nodeId].HandlePdo(1, msg.Data)
+		} else if funcCode==FUNC_TXPDO2 {
+			Nodes[nodeId].HandlePdo(2, msg.Data)
+		} else if funcCode==FUNC_TXPDO3 {
+			Nodes[nodeId].HandlePdo(3, msg.Data)
+		} else if funcCode==FUNC_TXPDO4 {
+			Nodes[nodeId].HandlePdo(4, msg.Data)
+		}
 
 	} else if funcCode == FUNC_EMCY {
 		Nodes[nodeId].HandleEmcy(msg.Data)
@@ -141,11 +175,18 @@ func (node *Node) HandleEmcy(msg [8]uint8) {
 	node.LastEmcyMsg = msg
 }
 
-func (node *Node) HandlePdo(no int, data [8]uint8) {
+func (node *Node) HandlePdo(pdoNo int, data [8]uint8) {
+	CheckPdoNo(pdoNo)
 	for i:=0; i<8; i++ {
-		node.rxPdo[no][i] = data[i]
+		node.rxPdo[pdoNo-1][i] = data[i]
 	}
-	node.PdoCount[no]++
+	node.RxPdosReceived[pdoNo-1]++
+}
+
+func (node *Node) ResetPdoCount() {
+	for i:=0; i<4; i++ {
+		node.RxPdosReceived[i] = 0
+	}
 }
 
 func NewMuxMsg(base int, nodeId NodeId, op uint8, index Index, subIndex SubIndex, Value int) can.Msg {
@@ -160,13 +201,18 @@ func (node *Node) ReadObject(index Index, subIndex SubIndex, byteCount uint8) (i
 	if byteCount<1 || byteCount>4 {
 		return 0, fmt.Errorf("Byte count was %d, must be 1..4", byteCount)
 	}
-	msg := NewMuxMsg(0x600, node.Id, 0x40 /*sdoReadOpcode[byteCount]*/, index, subIndex, 0)
+	msg := NewMuxMsg(0x600, node.Id, 0x40, index, subIndex, 0)
 	resp := node.Bus.Poll(msg, DefaultId(0x580, node.Id))
 	if resp==nil {
 		return 0, fmt.Errorf("no response")
 	}
 	if resp.Data[0]!=sdoReadOpcode[byteCount] {
-		return 0, fmt.Errorf("Read Object size mismatch for %x:%d, got opcode=%x, expected %x",index,subIndex, resp.Data[0], sdoReadOpcode[byteCount])
+		n := (0x53-resp.Data[0])>>2
+		fmt.Printf("Warning: Read object size mismatch for 0x%x:%d, expected %d bytes, got %d\n", index, subIndex,byteCount, n)
+		// Clear bytes not used - using received length info
+		for i:=4+n; i<8; i++ {
+			resp.Data[i] = 0
+		}
 	}
 	return mask[byteCount]&(int(resp.Data[4])+int(resp.Data[5])*256 + int(resp.Data[6])*256*256+int(resp.Data[7])*256*256*256) , nil
 }
@@ -209,7 +255,7 @@ func (node *Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, e
 	}
 	if  value!=expected {
 		node.Failed = true
-		color.Error.Printf("Expected %x, Actual %x, %s\n", expected, value, description)
+		color.Error.Printf("Expected %x, Actual %x, Objext 0x%x:%d (%s)\n", expected, value, index, subIndex, description)
 	}
 }
 
@@ -221,7 +267,14 @@ func (node *Node) VerifyRange(index Index, subIndex SubIndex, byteCount uint8, m
 	}
 	if  value<min || value>max {
 		node.Failed = true
-		color.Error.Printf("Expected %x..%x, Actual %x, %s\n", min, max, value, description)
+		color.Error.Printf("Expected %d..%d, Actual %d(0x%x), %s\n", min, max, value, value, description)
+	}
+}
+
+func (node *Node) Check(err error) {
+	if err!=nil {
+		node.Failed = true
+		color.Error.Printf("Error %s", err)
 	}
 }
 

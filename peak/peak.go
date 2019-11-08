@@ -66,7 +66,7 @@ const (
 )
 
 var (
-	peak, _ = syscall.LoadLibrary("pcanbasic.dll")
+	peak, peakError = syscall.LoadLibrary("pcanbasic.dll")
 	CAN_Initialize, _ = syscall.GetProcAddress(peak, "CAN_Initialize")
 	CAN_Uninitialize, _ = syscall.GetProcAddress(peak, "CAN_Uninitialize")
 	CAN_Reset, _ = syscall.GetProcAddress(peak, "CAN_Reset")
@@ -185,9 +185,17 @@ func (p *peakChannel) Initialize(bitrate int) error {
 	case 10000:
 		Btr0Btr1 = pPCAN_BAUD_10K
 	}
+	if peakError!= nil {
+		return fmt.Errorf("could not find \"pcanbasic.dll\", please check installation of peak driver")
+	}
+	if CAN_Initialize==uintptr(0) {
+		return fmt.Errorf("error loading \"pcanbasic.dll\", please check installation of peak driver")
+	}
 	ret, _, callErr := syscall.Syscall6(uintptr(CAN_Initialize), 5, uintptr(p.channel), uintptr(Btr0Btr1), uintptr(0), uintptr(0), uintptr(0), 0)
-	if ret!=0 {
-		return fmt.Errorf("Initialize error %d", ret)
+	if ret&0x400!=0 {
+		return fmt.Errorf("adapter not connected")
+	} else if ret!=0 {
+		return fmt.Errorf("error %d", ret)
 	}
 	if callErr!=0 {
 		return fmt.Errorf("Initialize error %d", callErr)
@@ -204,11 +212,11 @@ func (p *peakChannel) Initialize(bitrate int) error {
 }
 
 
-func New(channel uint8, bitrate int) *peakChannel {
+func New(channel uint8, bitrate int) (*peakChannel, error) {
 	bus := &peakChannel{channel: channel}
 	err := bus.Initialize(bitrate)
 	if err!=nil {
-		return nil
+		return nil, err
 	}
-	return bus
+	return bus, nil
 }

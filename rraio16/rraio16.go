@@ -45,6 +45,11 @@ var togglePower bool
 
 func VerifyBootupMessages(node *node.Node) {
 	node.Verify(node.EmcyCount == 1, "Emergency count should be 1, was %d", node.EmcyCount)
+	fmt.Printf("LastEmcyMsg was %x, %x, %x, %x, %x, %x, %x, %x\n",
+		node.LastEmcyMsg[0], node.LastEmcyMsg[1], node.LastEmcyMsg[2],node.LastEmcyMsg[3],node.LastEmcyMsg[4],node.LastEmcyMsg[5],node.LastEmcyMsg[6],node.LastEmcyMsg[7])
+	if node.LastEmcyMsg[2]!=0 {
+		fmt.Printf("Error register (third byte) should be 0, was actualy 0x%x\n", node.LastEmcyMsg[2])
+	}
 	node.Verify(node.HeartbeatCount == 1, "Emergency count should be 1, was %d", node.HeartbeatCount)
 }
 

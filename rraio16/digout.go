@@ -33,5 +33,6 @@ func VerifyDigOut(n *node.Node) {
 	SendPdos(n,2, 100*time.Millisecond)
 	n.VerifyRangeFloat(0x4021, 1, -0.5, 0.5, "DO1 low readback" )
 	n.VerifyRangeFloat(0x4021, 2, Vsupply-1.0,  Vsupply+0.5, "DO2 high readback" )
+	SetIsolationMode(n, 2000)
 }
 

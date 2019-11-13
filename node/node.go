@@ -255,7 +255,7 @@ func (node *Node) VerifyEqual(index Index, subIndex SubIndex, byteCount uint8, e
 	}
 	if  value!=expected {
 		node.Failed = true
-		color.Error.Printf("Expected %x, Actual %x, Objext 0x%x:%d (%s)\n", expected, value, index, subIndex, description)
+		color.Error.Printf("Expected 0x%x, Actual 0x%x, Object 0x%x:%d (%s)\n", expected, value, index, subIndex, description)
 	}
 }
 
@@ -303,7 +303,11 @@ func (node *Node) VerifyRangeFloat(index Index, subIndex SubIndex, min float64, 
 func (node *Node) Verify(cond bool, msg string, par...interface{}) {
 	if !cond {
 		node.Failed = true
-		color.Error.Printf(msg+"\n", par)
+		if par==nil {
+			color.Error.Printf(msg+"\n")
+		} else {
+			color.Error.Printf(msg+"\n", par)
+		}
 	}
 }
 

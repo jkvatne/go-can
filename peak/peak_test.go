@@ -13,11 +13,15 @@ var response *can.Msg
 
 // TestPeak assumes a CAN-Open node with id=11 is conneted. It polls a SDO at 1547 = 0x060B
 func TestPeak(t *testing.T) {
-	c := peak.New(peak.PCAN_USBBUS1,125000)
+	c, err := peak.New(peak.PCAN_USBBUS1,125000)
+	assert.NoError(t, err, "Peak driver")
 	msg := can.Msg{Id:1547, Type:can.Standard, Len:8, Data:[8]uint8{0x40,0,16,0,0,0,0,0} }
 	c.Write(msg)
 	time.Sleep(100*time.Millisecond)
 	response:=c.Read()
-	assert.Equal(t, expectedMsg, *response,  "Error")
+	assert.NotNil(t, response, "No response from external card with id 11")
+	if response!=nil {
+		assert.Equal(t, expectedMsg, *response, "Error")
+	}
 	c.Close()
 }

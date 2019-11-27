@@ -74,6 +74,7 @@ func main() {
 		fmt.Printf("* Channel 2 and 4 is connected\n")
 		fmt.Printf("* Channel 1 and 7 is connected via 1 kohm resistor\n")
 		fmt.Printf("* Channel 2 and 8 is connected via 1 kohm resistor\n")
+		os.Exit(0)
 	}
 
 	// Setup power supply

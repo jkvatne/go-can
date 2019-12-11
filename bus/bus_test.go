@@ -42,6 +42,7 @@ func TestConnectin(t *testing.T) {
 	assert.NotNil(t, m, "No response")
 	if m!=nil {
 		fmt.Printf("Poll response is : %s\n", m.ToString())
-		assert.Equal(t, expectedMsg, *m,  "Error")
+		assert.Equal(t, expectedMsg.Data[0], m.Data[0], "Error")
+		assert.Equal(t, expectedMsg.Data[1], m.Data[1], "Error")
 	}
 }

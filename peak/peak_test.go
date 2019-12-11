@@ -21,7 +21,8 @@ func TestPeak(t *testing.T) {
 	response:=c.Read()
 	assert.NotNil(t, response, "No response from external card with id 11")
 	if response!=nil {
-		assert.Equal(t, expectedMsg, *response, "Error")
+		assert.Equal(t, expectedMsg.Data[0], response.Data[0], "Error")
+		assert.Equal(t, expectedMsg.Data[1], response.Data[1], "Error")
 	}
 	c.Close()
 }

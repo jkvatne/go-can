@@ -11,40 +11,65 @@ import (
 	"os"
 	"time"
 )
+
 var pwr psu.Psu
 
 const (
-	INPUT_16BIT         = 0x2401    // iaAnalogInput
-	OUTPUT_16BIT        = 0x2411    // iaAnalogOutput
-	ISOLATION_PDO_NUM   = 0x5020
-	ISOLATION_PDO_RATE  = 0x5021
-	ISOLATION_PDO_COUNT = 0x5022
-	DIGITAL_ISO_OUT     = 0x5501    // baDouIniStat
-	DIGITAL_PASSIVE_OUT = 0x5504    // baDouPassive
+	INPUT_DIG           = 0x2100    // Two bytes with digital inputs
+	OUTPUT_DIG          = 0x2200    // Five bytes with digital outputs (including relays)
+	OUTPUT_STATE        = 0x2201    // FIve bytes with digital output state
+	INPUT_16BIT         = 0x2401    // iaAnalogInputs, 16 words
+	OUTPUT_16BIT        = 0x2411    // iaAnalogOutput (not used)
+	OUTPUT_ANLG_STATE   = 0x2412    // Analog Output states (not used)
+	SENSOR_TYPE         = 0x4010    // 16 bytes of sensor types
+	ANALOG16BIT         = 0x4020
 	INPUT_VALUE         = 0x4021
 	SCALED_VALUE        = 0x4022
 	OUTPUT_VALUE        = 0x4023
+	BIT_COUNT           = 0x4025
+	SENSOR_SCAN         = 0x4026
+	LOOP_SCAN           = 0x4027
+	FREQUENCY           = 0x4028
+	ERROR_STATUS        = 0x4029
+	NODE_STATE          = 0x5001
+	SYNC_PAR_1          = 0x5010
+	SYNC_PAR_2          = 0x5011
+	SYNC_PAR_3          = 0x5012
+	SYNC_PAR_4          = 0x5013
+	ISOLATION_PDO_NUM   = 0x5020
+	ISOLATION_PDO_RATE  = 0x5021
+	ISOLATION_PDO_COUNT = 0x5022
+	DIN_LOGIC           = 0x5400
+	DOU_LOGIC           = 0x5500
+	DOU_INI             = 0x5501
+	DOU_OUTEN           = 0x5502
+	DOU_PASSIVE         = 0x5504
+	AIN_EUNIT           = 0x5602  // Not used
+	AIN_DEC             = 0x5603  // Not used
+	AIN_LOWRANGE        = 0x5604  // Not used (no rangecheck enabled)
+	AIN_HIGHRANGE       = 0x5605  // Not used             "
+
+
+	DIGITAL_ISO_OUT     = 0x5501    // baDouIniStat
+	DIGITAL_PASSIVE_OUT = 0x5504    // baDouPassive
 )
 
 const (
-SENS_NONE        = 0
-SENS_MA          = 1
-SENS_20MA        = 2
-SENS_VOLT        = 3
-SENS_VOLT_OUT    = 4
-SENS_MA_OUT      = 5
-SENS_DIG_OUT     = 6
-SENS_FREQ        = 7
-SENS_DIG_IN      = 8
-SENS_QUADRATURE  = 10
-SENS_FREQX10     = 11
-SENS_FREQX100    = 12
-SENS_MA_SCALED   = 21
-SENS_VOLT_SCALED = 23
+IO_NONE        = 0
+IO_OUTPUT      = 1
+IO_PNP         = 2
+IO_NPN         = 3
+IO_TTL         = 4
+IO_NAMUR       = 5
+IO_ANALOG      = 6
+IO_FREQ_HZ     = 7
+IO_FREQ_HZx10  = 8
+IO_FREQ_HZx100 = 9
+IO_PWM_OUTPUT  = 10
 )
 
 var nodeId int
-var Vsupply = 20.1
+var Vsupply = 20.0   // 21.8 when using old card, Is actualy 20.0
 var togglePower bool
 
 func VerifyBootupMessages(node *node.Node) {
@@ -82,7 +107,7 @@ func main() {
 	}
 
 	// Setup power supply
-	pwr, _ = psu.NewTtiPsu(*pwrPort)
+	pwr = psu.NewPsu(*pwrPort)
 	if pwr!=nil {
 		fmt.Printf("Power supply name is \"%s\"\n", pwr.Name())
 	}
@@ -117,22 +142,29 @@ func main() {
 		fmt.Printf("Peak adapter initialization failed, %s", err)
 		os.Exit(1)
 	}
+	// Toggle power to give a clean startup
 	if togglePower {
-		_ = pwr.SetOutput(2, 20.0, 0.5, false)
+		_ = pwr.Disable(1)
 		time.Sleep(time.Millisecond * 1000)
 	}
 	b := bus.New(dev, 100*time.Millisecond)
 	n := node.New(b, nodeId)
-
 	if togglePower {
-		_ = pwr.SetOutput(2, 20.0, 0.5, true)
+		_ = pwr.SetOutput(1, 20.0, 0.5)
 		fmt.Printf("Waiting for boot-up\n")
 		time.Sleep(time.Millisecond * 1500)
 		VerifyBootupMessages(n)
 		n.Bus.Reset()
 	}
 	time.Sleep(time.Millisecond*100)
-	VerifyMandatoryObjects(n, nodeId, 250,3300, 0x622e38, 0x362e32, )
+
+	_, err = n.ReadObject(0x1000, 0, 4)
+	if err!=nil {
+		fmt.Printf("No card found, terminating test\n")
+		os.Exit(1)
+	}
+
+	VerifyMandatoryObjects(n, nodeId, 250,2300, 0x302e39, 0x352e32,0x1f0102 )
 	VerifyTxPdoParameters(n)
 	VerifyTxPdoMapping(n)
 	VerifyRxPdoParameters(n)
@@ -140,9 +172,7 @@ func main() {
 	VerifyHeartbeat(n)
 	VerifyEmcyOkStartingPdos(n)
 	VerifyRxPdo(n)
-	VerifyTxPdo(n)
 	VerifyDigOut(n)
-	VerifyAin(n)
 	VerifyFrequency(n)
 	VerifyIsolationModeTime(n)
 	if n.Failed {

@@ -26,15 +26,14 @@ func (psu *ManualPsu) Name() string {
 	return "Manual power supply control"
 }
 
+func (psu *ManualPsu) PortCount() int {
+	return 100
+}
 
 // SetOutput will set output voltage and current limit for a given channel
-func (p *ManualPsu) SetOutput(channel int, voltage float64, current float64, enable bool) error {
+func (p *ManualPsu) SetOutput(channel int, voltage float64, current float64) error {
 	fmt.Printf("Set output voltage cahnnel %d to %0.3fV, and current limit to %0.3fA\n", channel, voltage, current)
-	if enable {
-		fmt.Printf("Turn on and press <enter> key to continue...")
-	} else {
-		fmt.Printf("Disable output and press <enter> key to continue...")
-	}
+	fmt.Printf("Press <enter> key to continue...")
 	p.voltage = voltage
 	p.current = current
 	_,_ = bufio.NewReader(os.Stdin).ReadBytes('\n')
@@ -55,7 +54,7 @@ func (p *ManualPsu) EnableOutput(channel int) error {
 }
 
 // DisableOutput will turn off the given output channel
-func (p *ManualPsu) DisableOutput(channel int) error {
+func (p *ManualPsu) Disable(channel int) error {
 	fmt.Printf("Turn off output channel %d\n", channel)
 	fmt.Printf("Press <enter> key to continue...")
 	_,_ = bufio.NewReader(os.Stdin).ReadBytes('\n')

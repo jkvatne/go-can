@@ -70,6 +70,7 @@ func (node *Node) SkipTest(description string) bool {
 // The offset and count defines where in the 8-byte array the data is stored
 // Actual transmission of data to the remote node is done with node.SendPdo(n)
 func (node *Node) SetPdoValue(pdoNo int, offset int, count int, value int) {
+	// Verify that the given pdoNo is valid (1..4)
 	CheckPdoNo(pdoNo)
 	for i:=offset; i<count+offset; i++ {
 		node.txPdo[pdoNo-1][i] = uint8(value & 0xFF)
@@ -284,16 +285,21 @@ func Float32frombytes(bytes []byte) float32 {
 	return float
 }
 
-func (node *Node) VerifyRangeFloat(index Index, subIndex SubIndex, min float64, max float64, description string) {
+func (node *Node) ReadFloat(index Index, subIndex SubIndex) float64 {
 	value, err := node.ReadObject(index, subIndex, 4)
 	if err!=nil {
 		node.Failed = true
-		color.Error.Printf("Error reading float value in object %x:%d (%s) %s\n", index, subIndex, description, err)
+		color.Error.Printf("Error reading float value in object %x:%d %s\n", index, subIndex, err)
+		return 0.0
 	}
 	bs := make([]byte, 8)
 	binary.LittleEndian.PutUint32(bs, uint32(value))
-	floatValue := Float32frombytes(bs)
-	if floatValue<float32(min) || floatValue>float32(max) {
+	return float64(Float32frombytes(bs))
+}
+
+func (node *Node) VerifyRangeFloat(index Index, subIndex SubIndex, min float64, max float64, description string) {
+	floatValue := node.ReadFloat(index, subIndex)
+	if floatValue<min || floatValue>max {
 		node.Failed = true
 		color.Error.Printf("Error reading float value in %x:%d, expected %0.3f..%0.3f, was %0.3f, %s\n",
 			index, subIndex, min, max,floatValue, description)

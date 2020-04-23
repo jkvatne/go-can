@@ -11,25 +11,25 @@ func VerifyRxPdoParameters(node *node.Node) {
 		return
 	}
 	node.SetPreOperational()
-	node.VerifyEqual(0x1400, 0, 1, 3, "RxPdo")
+	node.VerifyRange(0x1400, 0, 1, 2,3, "RxPdo")
 	node.VerifyEqual(0x1400, 1, 4, 0x4000020B, "Cob ID")
 	node.VerifyEqual(0x1400, 2, 1, 254, "Transmission type")
-	node.VerifyEqual(0x1400, 3, 2, 0, "Inhibit time")
+	//node.VerifyEqual(0x1400, 3, 2, 0, "Inhibit time")
 	node.VerifyReadAbort(0x1400, 4, 1, "Not implemented")
-	node.VerifyEqual(0x1401, 0, 1, 3, "RxPdo")
+	node.VerifyRange(0x1401, 0, 1, 2, 3, "RxPdo")
 	node.VerifyEqual(0x1401, 1, 4, 0x4000030B, "Cob ID")
 	node.VerifyEqual(0x1401, 2, 1, 254, "Transmission type")
-	node.VerifyEqual(0x1401, 3, 2, 0, "Inhibit time")
+	//node.VerifyEqual(0x1401, 3, 2, 0, "Inhibit time")
 	//node.VerifyEqual(0x1401, 4, 1, 0x6020000, "Not implemented")
-	node.VerifyEqual(0x1402, 0, 1, 3, "RxPdo")
+	node.VerifyRange(0x1402, 0, 1, 2, 3, "RxPdo")
 	node.VerifyEqual(0x1402, 1, 4, 0x4000040B, "Cob ID")
 	node.VerifyEqual(0x1402, 2, 1, 254, "Transmission type")
-	node.VerifyEqual(0x1402, 3, 2, 0, "Inhibit time")
+	//node.VerifyEqual(0x1402, 3, 2, 0, "Inhibit time")
 	//node.VerifyEqual(0x1402, 4, 1, 0x6020000, "Not implemented")
-	node.VerifyEqual(0x1403, 0, 1, 3, "RxPdo")
+	node.VerifyRange(0x1403, 0, 1, 2, 3, "RxPdo")
 	node.VerifyEqual(0x1403, 1, 4, 0x4000050B, "Cob ID")
 	node.VerifyEqual(0x1403, 2, 1, 254, "Transmission type")
-	node.VerifyEqual(0x1403, 3, 2, 0, "Inhibit time")
+	//node.VerifyEqual(0x1403, 3, 2, 0, "Inhibit time")
 	//node.VerifyEqual(0x1403, 4, 1, 0x6020000, "Not implemented")
 }
 
@@ -72,6 +72,7 @@ func VerifyTxPdoParameters(node *node.Node) {
 		return
 	}
 	node.SetPreOperational()
+	fmt.Printf("Version 2.6 will return 1 byte for inhibit time, not 2 as required by CAN-Open specification\n")
 	node.VerifyEqual(0x1800, 0, 1, 3, "TxPdo")
 	node.VerifyEqual(0x1800, 1, 4, 0x4000018B, "Cob ID")
 	node.VerifyEqual(0x1800, 2, 1, 4, "Transmission type")
@@ -168,7 +169,7 @@ func SetIsolationMode(n *node.Node, timeoutMs int) {
 	} else {
 		n.Check(n.WriteObject(ISOLATION_PDO_RATE, 0, 1, 100))
 	}
-	n.Check(n.WriteObject(ISOLATION_PDO_COUNT, 0, 1, timeoutMs/100))
+	n.Check(n.WriteObject(ISOLATION_PDO_COUNT, 0, 1, (timeoutMs+99)/100))
 
 }
 
@@ -190,12 +191,12 @@ func VerifyIsolationModeTime(n *node.Node) {
 		return
 	}
 	n.SetPreOperational()
-	SetIsolationMode(n, 400)
+	SetIsolationMode(n, 500)
 	n.SetOperational()
 	n.SetPdoValue(4, 0, 2, 15000)
 	SendPdos(n,3, time.Millisecond*100)
 	n.VerifyRange(0x2401, 9, 2, 14500, 15500, "Output ok")
-	time.Sleep(2800 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 	n.VerifyRange(0x2401, 9, 2, 0, 500, "Should have Isolation mode after 0.8sec")
 	SetIsolationMode(n, 2000)
 
@@ -205,6 +206,7 @@ func VerifyTxPdo(n *node.Node) {
 	if n.SkipTest("Verify tx pdos") {
 		return
 	}
+	// Turn off isolation mode
 	n.SetOperational()
 	// Send pdo setting output 13 to +10mA (15000)
 	n.SetPdoValue(4, 0, 2, 15000)
@@ -217,12 +219,5 @@ func VerifyTxPdo(n *node.Node) {
 	n.VerifyRangeFloat(0x4021, 13, 0.009, 0.011, "Float input chan 13")
 	// Verify analog current at channel 13- should be -10mA.
 	n.VerifyRangeFloat(0x4021, 9, -0.011, -0.009, "Float input chan 9")
-	// Wait 400mS and check for not timeout. Should not go to 0mA!
-	time.Sleep(400 * time.Millisecond)
-	n.VerifyRange(0x2401, 9, 2, 14500, 15500, "No Isolation mode after 1.0 sec")
-	// Verify isolation mode after 2 sec total
-	time.Sleep(3000 * time.Millisecond)
-	n.VerifyRange(0x2401, 9, 2, 0, 500, "Isolation mode after 1 sec")
-
 }
 

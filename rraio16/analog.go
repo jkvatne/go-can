@@ -18,12 +18,7 @@ func VerifyAin(n *node.Node) {
 	time.Sleep(10*time.Millisecond)
 	// Turn on output 1 and off output 2
 	n.SetPdoValue(1, 0, 1, 3)
-	n.SendPdo(1)
-	time.Sleep(100*time.Millisecond)
-	n.SendPdo(1)
-	time.Sleep(100*time.Millisecond)
-	n.SendPdo(1)
-	time.Sleep(200*time.Millisecond)
+	SendPdos(n,4, 100*time.Millisecond)
 	n.VerifyRangeFloat(0x4021, 1, Vsupply-1.0, Vsupply+0.5, "DO1 high" )
 	n.VerifyRangeFloat(0x4021, 2,  Vsupply-1.0, Vsupply+0.5, "DO2 high" )
 	n.VerifyRangeFloat(0x4021, 7, Vsupply-1.0, Vsupply+0.5, "DO7 high")
@@ -31,8 +26,7 @@ func VerifyAin(n *node.Node) {
 	// Set as current in
 	_ = n.WriteObject(0x4010, 7, 1, SENS_MA)
 	_ = n.WriteObject(0x4010, 8, 1, SENS_MA)
-	n.SendPdo(1)
-	time.Sleep(300*time.Millisecond)
+	SendPdos(n,4, 100*time.Millisecond)
 	n.VerifyRangeFloat(0x4021, 7, 0.015, 0.019, "Chan 7 current high" )
 	n.VerifyRangeFloat(0x4021, 8, 0.015,  0.019, "Chan 8 current high" )
 

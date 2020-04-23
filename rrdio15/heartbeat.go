@@ -14,6 +14,7 @@ func  VerifyHeartbeat(node *node.Node) {
 	// Set heartbeet at 100mS
 	err := node.WriteObject(HEARTBEAT_TIME, 0, 2, 100)
 	if err!=nil {
+		node.Failed = true
 		fmt.Printf("Error writing heartbeat time, %s\n", err)
 		return
 	}
@@ -28,6 +29,7 @@ func  VerifyHeartbeat(node *node.Node) {
 		node.Failed = true
 		fmt.Printf("Did not get correct number of hearbeat messages, expected ca 10, got %d\n", n)
 	}
+	_ = node.WriteObject(HEARTBEAT_TIME, 0, 2, 0)
 }
 
 

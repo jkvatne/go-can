@@ -11,7 +11,7 @@ func VerifyRxPdoParameters(node *node.Node) {
 		return
 	}
 	node.SetPreOperational()
-	node.VerifyEqual(0x1400, 0, 1, 2, "RxPdo")
+	node.VerifyRange(0x1400, 0, 1, 2, 3,"RxPdo")
 	node.VerifyEqual(0x1400, 1, 4, 0x4000020B, "Cob ID")
 	node.VerifyEqual(0x1400, 2, 1, 254, "Transmission type")
 	//node.VerifyEqual(0x1400, 3, 2, 0x11, "Inhibit time")

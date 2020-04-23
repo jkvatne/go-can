@@ -52,9 +52,9 @@ func VerifyBootupMessages(node *node.Node) {
 	fmt.Printf("LastEmcyMsg was %x, %x, %x, %x, %x, %x, %x, %x\n",
 		node.LastEmcyMsg[0], node.LastEmcyMsg[1], node.LastEmcyMsg[2],node.LastEmcyMsg[3],node.LastEmcyMsg[4],node.LastEmcyMsg[5],node.LastEmcyMsg[6],node.LastEmcyMsg[7])
 	if node.LastEmcyMsg[2]!=0 {
-		fmt.Printf("Error register (third byte) should be 0, was actualy 0x%x\n", node.LastEmcyMsg[2])
+		fmt.Printf("Error register (third byte) should be 1, was actualy 0x%x\n", node.LastEmcyMsg[2])
 	}
-	node.Verify(node.HeartbeatCount == 1, "Emergency count should be 1, was %d", node.HeartbeatCount)
+	node.Verify(node.HeartbeatCount == 1, "Heartbeat count should be 1, was %d", node.HeartbeatCount)
 }
 
 func main() {
@@ -69,7 +69,7 @@ func main() {
 		fmt.Printf("This is a functional testing of RRAIO16 software\n")
 		fmt.Printf("* A TTiCPX4000 power supply connected via USB will be used if present. Fallback is manual settings.\n")
 		fmt.Printf("* The can bus is connected via a Peak USB adapter as device 1\n")
-		fmt.Printf("* Power supply channel 2 is 20.000V, and must be connected to terminal 1-2 and 9-10\n")
+		fmt.Printf("* Power supply channel 1 is 20.000V, and must be connected to terminal 1-2 and 9-10\n")
 		fmt.Printf("* Channel 9 and 13 is connected\n")
 		fmt.Printf("* Channel 10 and 14 is connected\n")
 		fmt.Printf("* Channel 11 and 15 is connected\n")
@@ -118,14 +118,14 @@ func main() {
 		os.Exit(1)
 	}
 	if togglePower {
-		_ = pwr.SetOutput(2, 20.0, 0.5, false)
+		_ = pwr.Disable(1)
 		time.Sleep(time.Millisecond * 1000)
 	}
 	b := bus.New(dev, 100*time.Millisecond)
 	n := node.New(b, nodeId)
 
 	if togglePower {
-		_ = pwr.SetOutput(2, 20.0, 0.5, true)
+		_ = pwr.SetOutput(1, 20.0, 0.5)
 		fmt.Printf("Waiting for boot-up\n")
 		time.Sleep(time.Millisecond * 1500)
 		VerifyBootupMessages(n)
